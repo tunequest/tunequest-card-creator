@@ -1,5 +1,5 @@
 import { PlaylistedTrack, Scopes, SpotifyApi, Track } from "@spotify/web-api-ts-sdk";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import dayjs from 'dayjs'
 import { Document, Image, Page as PDFPage, PDFViewer, Text, View } from "@react-pdf/renderer";
 import * as QRCode from 'qrcode';
@@ -52,9 +52,37 @@ const generateSessionPDFQrCode = async (
     );
 }
 
+const stripRemasteredTracks = (items: PlaylistedTrack<Track>[]): PlaylistedTrack<Track>[] => {
+    return items.map(item => {
+        let track = item.track;
+        let name = track.name;
+        
+        // Remove lines with only years
+        name = name.split('\n').filter(line => !/^\d{4}$/.test(line.trim())).join(' ');
+        
+        // Remove anything after " - " that contains remaster, stereo mix, version, or original (case insensitive)
+        name = name.replace(/ - (?:.*?)(remaster|remastered|stereo mix|version|original).*$/i, '');
+        
+        // Remove remaster/version variations in parentheses
+        name = name.replace(/\s*\(.*?(remaster|remastered|stereo mix|version).*?\)/i, '');
+        
+        // Clean up any trailing hyphens and extra whitespace
+        name = name.trim().replace(/\s*-\s*$/, '').trim();
+        
+        return {
+            ...item,
+            track: {
+                ...track,
+                name: name
+            }
+        };
+    });
+}
+
 function App() {
     const [url, setUrl] = useState<string>('');
     const [playlistItems, setPlaylistItems] = useState<PlaylistedTrack<Track>[] | null>(null);
+    const [originalPlaylistItems, setOriginalPlaylistItems] = useState<PlaylistedTrack<Track>[] | null>(null);
     const [name, setName] = useState<string>('');
     const [codeType, setCodeType] = useState('qr');
     const inputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +92,18 @@ function App() {
     const overrideJsonRef = useRef<{ value: any } | null >({value: ""});
     const [overrideText, setOverrideText] = useState<string>('');
     const [stripRemastered, setStripRemastered] = useState<boolean>(false);
+
+    // Re-process playlist items when stripRemastered flag changes
+    useEffect(() => {
+        if (originalPlaylistItems) {
+            if (stripRemastered) {
+                const stripped = stripRemasteredTracks(originalPlaylistItems);
+                setPlaylistItems(stripped);
+            } else {
+                setPlaylistItems(originalPlaylistItems);
+            }
+        }
+    }, [stripRemastered, originalPlaylistItems]);
 
     const handleOverrideChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
         const input = event.target.value;
@@ -96,23 +136,6 @@ function App() {
             offset += result.limit;
         } while (result.next !== null);
 
-        // optionally remove some irrelevant tokens from song titles
-        if (stripRemastered) {
-            for (var index in items) {
-                let track = items[index].track;
-                // remove dash space dash with remaster or stereo mix in the following text
-                let match = (track.name).match(/(.*) - .*(remaster|stereo mix).*/i);
-                if (match && match.length > 1) {
-                    track.name = match[1];
-                }
-                // remove variations of remaster in parentheses
-                match = (track.name).match(/(.*) \(.*remaster.*\)/i);
-                if (match && match.length > 1) {
-                    track.name = match[1];
-                }
-            }
-        }
-
         // construct override object indexed by track links
         // we need this to strip any possible &si= parts in the url
         let overrides : Overrides = {}
@@ -144,7 +167,16 @@ function App() {
                 if (override.date) items[index].track.album.release_date = override.date;
             }
         }
-        setPlaylistItems(items);
+        // Store original items
+        setOriginalPlaylistItems(items);
+        
+        // Apply stripping if enabled
+        if (stripRemastered) {
+            const stripped = stripRemasteredTracks(items);
+            setPlaylistItems(stripped);
+        } else {
+            setPlaylistItems(items);
+        }
     }
 
     const setCardName = () => {
