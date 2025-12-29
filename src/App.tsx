@@ -10,7 +10,7 @@ const redirectUri = import.meta.env.VITE_SPOTIFY_REDIRECT_URI as string;
 const playlistRegex = /^https:\/\/open\.spotify\.com\/playlist\/([a-zA-Z0-9-]+).*$/gm
 const trackUrlRegex = /^(https:\/\/open\.spotify\.com\/(episode|track)\/[a-zA-Z0-9-]+).*$/
 
-const arrayChunks = (array: PlaylistedTrack<Track>[], chunkSize: number) => Array(Math.ceil(array.length / chunkSize))
+const arrayChunks = <T,>(array: T[], chunkSize: number): T[][] => Array(Math.ceil(array.length / chunkSize))
     .fill(null)
     .map((_, index) => index * chunkSize)
     .map(begin => array.slice(begin, begin + chunkSize));
@@ -79,7 +79,34 @@ const stripRemasteredTracks = (items: PlaylistedTrack<Track>[]): PlaylistedTrack
     });
 }
 
+type AppMode = 'card-creator' | 'bingo-cards';
+
+const BINGO_CATEGORIES = [
+    { id: 'A', label: 'A', color: '#10b981' }, // green
+    { id: 'B', label: 'B', color: '#3b82f6' }, // blue
+    { id: 'C', label: 'C', color: '#8b5cf6' }, // purple
+    { id: 'D', label: 'D', color: '#ec4899' }, // pink
+    { id: 'E', label: 'E', color: '#f59e0b' }, // orange
+];
+
+const generateBingoCard = () => {
+    const squares = [];
+    // Add exactly 5 squares for each category
+    BINGO_CATEGORIES.forEach(category => {
+        for (let i = 0; i < 5; i++) {
+            squares.push(category);
+        }
+    });
+    // Shuffle the array using Fisher-Yates algorithm
+    for (let i = squares.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [squares[i], squares[j]] = [squares[j], squares[i]];
+    }
+    return squares;
+};
+
 function App() {
+    const [appMode, setAppMode] = useState<AppMode>('card-creator');
     const [url, setUrl] = useState<string>('');
     const [playlistItems, setPlaylistItems] = useState<PlaylistedTrack<Track>[] | null>(null);
     const [originalPlaylistItems, setOriginalPlaylistItems] = useState<PlaylistedTrack<Track>[] | null>(null);
@@ -92,6 +119,8 @@ function App() {
     const overrideJsonRef = useRef<{ value: any } | null >({value: ""});
     const [overrideText, setOverrideText] = useState<string>('');
     const [stripRemastered, setStripRemastered] = useState<boolean>(false);
+    const [bingoCardCount, setBingoCardCount] = useState<number>(8);
+    const [bingoCards, setBingoCards] = useState<ReturnType<typeof generateBingoCard>[] | null>(null);
 
     // Re-process playlist items when stripRemastered flag changes
     useEffect(() => {
@@ -183,6 +212,14 @@ function App() {
         setName(inputRef.current?.value ?? '');
     }
 
+    const generateBingoCards = () => {
+        const cards = [];
+        for (let i = 0; i < bingoCardCount; i++) {
+            cards.push(generateBingoCard());
+        }
+        setBingoCards(cards);
+    };
+
     return (
         <div className="w-full h-screen overflow-scroll">
             <div className="mx-auto mt-16 w-full mt-8 px-8">
@@ -194,15 +231,46 @@ function App() {
                             <svg viewBox="0 0 2 2" className="mx-2 inline h-0.5 w-0.5 fill-current" aria-hidden="true">
                                 <circle cx={1} cy={1} r={1}/>
                             </svg>
-                            <span>
-                                This tool uses the Spotify API to read the release year of the tracks by looking at the tracks album release year.
+                            {appMode === 'card-creator' ? (
+                                <span>
+                                    This tool uses the Spotify API to read the release year of the tracks by looking at the tracks album release year.
 When creating your playlist you need to pay attention to select the original tracks and not the remastered versions or version of the tracks that are part of some compilations since this results in wrong release year information.
-                            </span>
+                                </span>
+                            ) : (
+                                <span>
+                                    This tool generates printable Bingo cards with a 5x5 grid. Each square is assigned a random category (A-E) with distinct colors for easy identification during gameplay.
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-5">
+                {/* Mode Selection */}
+                <div className="mb-8">
+                    <label className="block text-sm font-semibold leading-6 text-gray-900 mb-2">
+                        Select Mode
+                    </label>
+                    <div className="flex rounded-full bg-indigo-100 p-1 text-sm font-semibold w-fit">
+                        <button
+                            className={`rounded-full px-6 py-2 transition ${appMode === 'card-creator' ? 'bg-white text-indigo-600 shadow' : 'text-indigo-600/70'}`}
+                            onClick={() => setAppMode('card-creator')}
+                            type="button"
+                        >
+                            Card Creator
+                        </button>
+                        <button
+                            className={`rounded-full px-6 py-2 transition ${appMode === 'bingo-cards' ? 'bg-white text-indigo-600 shadow' : 'text-indigo-600/70'}`}
+                            onClick={() => setAppMode('bingo-cards')}
+                            type="button"
+                        >
+                            Bingo Cards
+                        </button>
+                    </div>
+                </div>
+
+                {appMode === 'card-creator' ? (
+                    <>
+                        <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-5">
 
                     <div className="col-span-1 sm:col-span-4">
                         <label htmlFor="playlist" className="block text-sm font-semibold leading-6 text-gray-900">
@@ -317,10 +385,41 @@ When creating your playlist you need to pay attention to select the original tra
                     </div>
                 )}
                 </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-5">
+                            <div className="col-span-1 sm:col-span-4">
+                                <label htmlFor="bingoCardCount" className="block text-sm font-semibold leading-6 text-gray-900">
+                                    Number of Bingo Cards
+                                </label>
+                                <div className="mt-2.5">
+                                    <input
+                                        type="number"
+                                        id="bingoCardCount"
+                                        min="1"
+                                        max="100"
+                                        value={bingoCardCount}
+                                        onChange={e => setBingoCardCount(parseInt(e.target.value) || 8)}
+                                        className="block w-full rounded-md border-0 px-3.5 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex items-end">
+                                <button
+                                    onClick={generateBingoCards}
+                                    className="block w-full rounded-md bg-indigo-600 px-3.5 py-2.5 text-center text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                                >
+                                    Generate Cards
+                                </button>
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
 
             {
-                playlistItems && (
+                playlistItems && appMode === 'card-creator' && (
                     <PDFViewer className="w-3/4 h-3/4 mx-auto mt-8">
                         <Document>
                             {arrayChunks(playlistItems, 12).map((pageChunks, pageIndex) => (
@@ -595,6 +694,94 @@ When creating your playlist you need to pay attention to select the original tra
                                         </View>
                                     </PDFPage>
                                 </>
+                            ))}
+                        </Document>
+                    </PDFViewer>
+                )}
+
+            {
+                bingoCards && appMode === 'bingo-cards' && (
+                    <PDFViewer className="w-3/4 h-3/4 mx-auto mt-8">
+                        <Document>
+                            {arrayChunks(bingoCards, 8).map((pageCards, pageIndex) => (
+                                <PDFPage size="A4" key={`bingo-page-${pageIndex}`} style={{
+                                    padding: '10px',
+                                    display: 'flex',
+                                    flexDirection: 'row',
+                                    flexWrap: 'wrap',
+                                    justifyContent: 'flex-start',
+                                    alignContent: 'flex-start',
+                                    gap: '5px',
+                                }}>
+                                    {pageCards.map((card, cardIndex) => (
+                                        <View key={`card-${cardIndex}`} style={{
+                                            width: '9.8cm',
+                                            height: '6.7cm',
+                                            border: '2px solid #000',
+                                            padding: '5px',
+                                            display: 'flex',
+                                            flexDirection: 'row',
+                                            gap: '5px',
+                                        }}>
+                                            {/* Left side: Grid */}
+                                            <View style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                            }}>
+                                                {/* 5x5 Grid */}
+                                                {[0, 1, 2, 3, 4].map(row => (
+                                                    <View key={`row-${row}`} style={{
+                                                        display: 'flex',
+                                                        flexDirection: 'row',
+                                                    }}>
+                                                        {[0, 1, 2, 3, 4].map(col => {
+                                                            const squareIndex = row * 5 + col;
+                                                            const category = card[squareIndex];
+                                                            return (
+                                                                <View key={`square-${row}-${col}`} style={{
+                                                                    width: '1.25cm',
+                                                                    height: '1.25cm',
+                                                                    backgroundColor: category.color,
+                                                                    border: '1px solid #000',
+                                                                    display: 'flex',
+                                                                    justifyContent: 'center',
+                                                                    alignItems: 'center',
+                                                                }}>
+                                                                    <Text style={{
+                                                                        fontSize: 11,
+                                                                        fontWeight: 'bold',
+                                                                        color: '#FFFFFF',
+                                                                    }}>
+                                                                        {category.label}
+                                                                    </Text>
+                                                                </View>
+                                                            );
+                                                        })}
+                                                    </View>
+                                                ))}
+                                            </View>
+                                            
+                                            {/* Right side: Answer field */}
+                                            <View style={{
+                                                width: '3.3cm',
+                                                border: '1px solid #999',
+                                                borderRadius: '4px',
+                                                padding: '3px',
+                                                backgroundColor: '#f9f9f9',
+                                                display: 'flex',
+                                                justifyContent: 'flex-start',
+                                            }}>
+                                                <Text style={{
+                                                    fontSize: 7,
+                                                    color: '#666',
+                                                    marginBottom: '2px',
+                                                }}>
+                                                    Answers:
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    ))}
+                                </PDFPage>
                             ))}
                         </Document>
                     </PDFViewer>
